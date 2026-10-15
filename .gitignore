@@ -1,0 +1,7 @@
+.DS_Store
+.env
+.env.*
+.clasprc.json
+.clasp.json
+*.pem
+*.key
