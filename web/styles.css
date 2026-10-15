@@ -11,6 +11,7 @@ input,textarea,[contenteditable="true"]{user-select:text;-webkit-user-select:tex
 .sheet-state.connected{background:#eaf7ef;color:#17603d}
 .sheet-state.checking{background:#fff5df;color:#8c6515}
 .sheet-state.offline,.sheet-state.not-connected{background:#fff0ed;color:#9c302b}
+.sheet-state.needs-repair{background:#fff0ed;color:#9c302b}
 .sheet-state-dot{width:8px;height:8px;border-radius:50%;background:#cf5149;flex:none}
 .sheet-state.connected .sheet-state-dot{background:#25844d}
 .sheet-state.checking .sheet-state-dot{background:#d09219;box-shadow:0 0 0 3px #d0921926}
