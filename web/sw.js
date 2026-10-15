@@ -1,4 +1,4 @@
-const CACHE='shohel-shell-v2';
+const CACHE='shohel-shell-v3';
 const BASE=new URL('./',self.registration.scope);
 const FILES=['','index.html','app.js','styles.css','manifest.webmanifest','icon.svg'].map(x=>new URL(x,BASE).toString());
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES))));
