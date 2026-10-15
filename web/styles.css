@@ -51,12 +51,15 @@ button:active{transform:scale(.95)}
 @keyframes ping{0%{transform:scale(.5);opacity:.7}100%{transform:scale(1.6);opacity:0}}
 @keyframes blink{50%{opacity:.35}}
 .status button.sync-btn{display:inline-flex;align-items:center;gap:6px;margin-left:auto;padding:7px 13px;border-radius:999px;background:linear-gradient(135deg,#0f4c81,#17808f);color:#fff;font-size:10px;font-weight:700;box-shadow:0 5px 12px #0f4c8133}
+.status{flex-wrap:nowrap;row-gap:0}
+.status .sync-time{width:auto;order:0;margin-left:auto;white-space:nowrap}
+.status button.sync-btn{flex:none}
 .sync-ic{display:inline-block;font-size:13px;line-height:1}
 .sync-btn.spin .sync-ic{animation:spin .8s linear infinite}
 .sync-btn.spin{opacity:.85;pointer-events:none}
 @keyframes spin{to{transform:rotate(360deg)}}
-.status .sync-time{margin-left:0;width:100%;order:9;font-size:9px}
-@media(max-width:390px){.status .sync-time{display:block}}
+.status .sync-time{font-size:9px}
+@media(max-width:540px){.status{gap:8px;padding:8px 10px}.status>.dot,.status>.dot+span,.status>.sep,.status .sync-time{display:none}.status button.sync-btn{margin-left:auto}.feedback-fab{right:12px;bottom:calc(80px + env(safe-area-inset-bottom));width:42px;height:42px;padding:0;display:grid;place-items:center;border-radius:50%;font-size:0}.feedback-fab span{font-size:16px;margin:0}}
 
 /* ---------- Toast / pop-up message ---------- */
 .toast{--d:4500ms;top:calc(14px + env(safe-area-inset-top));bottom:auto;left:50%;transform:translate(-50%,-26px) scale(.92);display:flex;align-items:center;gap:12px;overflow:hidden;text-align:left;padding:12px 16px 14px 12px;border:1px solid #ffffff33;border-radius:18px;background:#14324ae6;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:0 14px 34px #0a203a40;transition:transform .45s var(--ease),opacity .25s}
