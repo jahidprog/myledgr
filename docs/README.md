@@ -9,7 +9,7 @@ This is a static Bangla PWA in `web/` with local persistence, demo data, custome
 1. Create a new, private Google spreadsheet for the prototype.
 2. Open **Extensions → Apps Script**. Paste `apps-script/add.gs` into the editor (a file named `add.gs` is fine).
 3. In Apps Script **Project Settings**, enable **Show `appsscript.json` manifest file**. Replace its contents with `apps-script/appsscript.json` and save.
-4. From the editor, select `setup` and click **Run**. Review the requested Google permissions. Setup creates the tabs, protects header rows, generates the API token in Script Properties, creates the calculated tabs, and schedules a daily Drive backup. The token is not printed in logs.
+4. From the editor, select `setup` and click **Run**. Review the requested Google permissions. Setup creates/checks the tabs and saves the API token in Script Properties. It is intentionally lightweight and avoids formatting every sheet during setup. It is safe to rerun if tabs were partially created. After setup, reload the spreadsheet; use **Shohel App → ৬. Install daily backup** separately if you want the daily Drive backup trigger. The token is not printed in logs.
 5. Choose **Deploy → New deployment → Web app**. Set **Execute as: Me** and **Who has access: Anyone**, then deploy and authorize. Keep the Sheet itself private. Copy the `/exec` URL for the pairing step.
 6. If you edit the script later, use **Deploy → Manage deployments → Edit → New version → Deploy**. The `/exec` URL stays the same. To invalidate existing pairing links, use the Sheet menu **Shohel App → ৪. Rotate token**.
 
