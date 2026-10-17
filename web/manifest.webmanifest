@@ -1,10 +1,2 @@
-{
-  "name": "My Business",
-  "short_name": "Shazzed",
-  "lang": "bn-BD",
-  "start_url": "./",
-  "display": "standalone",
-  "background_color": "#f4f7fb",
-  "theme_color": "#0f4c81",
-  "icons": [{"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
-}
+{"name":"শোহেল ব্যবসা","short_name":"শোহেল","start_url":"./","scope":"./","display":"standalone","background_color":"#f4f6f9","theme_color":"#0f4c81","lang":"bn",
+"icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}]}

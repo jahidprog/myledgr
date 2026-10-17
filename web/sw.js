@@ -1,6 +1,10 @@
-const CACHE='shohel-shell-v6';
-const BASE=new URL('./',self.registration.scope);
-const FILES=['','index.html','app.js','styles.css','manifest.webmanifest','icon.svg'].map(x=>new URL(x,BASE).toString());
-self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES))));
-self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))));
-self.addEventListener('fetch',event=>{const u=new URL(event.request.url);if(u.origin!==location.origin||event.request.method!=='GET')return;event.respondWith(fetch(event.request).then(r=>{caches.open(CACHE).then(c=>c.put(event.request,r.clone()));return r}).catch(()=>caches.match(event.request).then(r=>r||caches.match(new URL('index.html',BASE).toString()))))});
+const C = 'sh-v1'; // bump on every release
+const A = ['./', 'index.html', 'app.js', 'style.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
+self.addEventListener('install', e => e.waitUntil(caches.open(C).then(c => c.addAll(A))));
+self.addEventListener('message', e => { if (e.data === 'skip') self.skipWaiting(); });
+self.addEventListener('activate', e => e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== C).map(x => caches.delete(x)))).then(() => clients.claim())));
+self.addEventListener('fetch', e => { // static files of this origin only; API calls are never cached
+  const u = new URL(e.request.url);
+  if (e.request.method !== 'GET' || u.origin !== location.origin) return;
+  e.respondWith(caches.match(e.request, { ignoreSearch: true }).then(r => r || fetch(e.request)));
+});
