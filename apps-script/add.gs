@@ -1,62 +1,195 @@
-/** Shohel prototype Google Sheets backend. Paste this file into Apps Script. */
 const VERSION = '0.1.0';
-const TABLES = {
-  Customers:['id','name','phone','address','notes'], Orders:['id','customer_id','customer_name','memo_no','order_date','notes','total','replaces_order_id'],
-  OrderItems:['id','order_id','customer_id','memo_no','product','quantity','rate','line_total'], Payments:['id','customer_id','customer_name','order_id','memo_no','amount','method','paid_on','notes'],
-  Returns:['id','customer_id','customer_name','order_id','memo_no','order_item_id','product','quantity_returned','amount_adjustment','returned_on','reason'], Expenses:['id','expense_date','category','amount','method','description','notes'],
-  ExpenseCategories:['id','name','is_custom','is_active'], Investments:['id','invested_on','amount','type','method','purpose','notes'], Assets:['id','name','quantity','purchase_price','purchased_on','method','asset_status','remarks'],
-  Adjustments:['id','customer_id','customer_name','person','kind','direction','amount','adjusted_on','affects_customer_outstanding','reason','notes'], Recoveries:['id','adjustment_id','amount','recovered_on','note'], RateChart:['id','product','material','gsm_spec','default_rate','effective_from'],
-  Feedback:['id','created_at','kind','rating','screen','message','app_version','device_id'], _Ops:['op_id','entity','entity_id','result_json','applied_at']
+const T = { // entity -> [tab, business columns]
+  customer: ['Customers', 'id,name,phone,address,notes'],
+  order:    ['Orders', 'id,customer_id,customer_name,memo_no,order_date,notes,items,total'],
+  payment:  ['Payments', 'id,customer_id,customer_name,amount,method,paid_on,notes'],
+  expense:  ['Expenses', 'id,expense_date,category,amount,method,description'],
+  feedback: ['Feedback', 'id,kind,rating,screen,message,app_version,device_id']
 };
-const SYSTEM=['status','void_reason','voided_at','created_at','updated_at','version','op_id'];
-const ENTITY_TAB={customer:'Customers',order:'Orders',payment:'Payments',return:'Returns',expense:'Expenses',expense_category:'ExpenseCategories',investment:'Investments',asset:'Assets',adjustment:'Adjustments',recovery:'Recoveries',rate:'RateChart',feedback:'Feedback'};
-const CATEGORIES=['নাস্তা','কারিগর','কাটিং মাস্টার','ভাড়া','ট্রান্সপোর্ট','সাব্লিমেশন','এমব্রডায়রি','বেতন','পারচেজ','ক্যাশ আউট','মেশিন সার্ভিসিং','অন্যান্য'];
+const SYS = ['status', 'void_reason', 'voided_at', 'created_at', 'updated_at', 'version', 'op_id'];
+const NUMC = ['amount', 'total', 'rating', 'version'];
+const MAXLEN = { name: 120, notes: 1000, message: 1000, description: 1000, address: 500 };
+const METHODS = ['cash', 'bank', 'bkash', 'nagad', 'other'];
+const KINDS = ['suggestion', 'bug', 'praise', 'question', 'task', 'answer'];
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-function onOpen(){SpreadsheetApp.getUi().createMenu('Shohel App').addItem('১. Setup / repair tabs','setup').addItem('২. Load demo data','seedDemo').addItem('৩. Pairing information','showPairing').addItem('৪. Rotate token','rotateToken').addItem('৫. Back up now','dailyBackup').addItem('৬. Install daily backup','installBackupTrigger').addItem('৭. Refresh Balances / Summary','refreshViews_').addToUi();}
-function setup(){
-  const ss=SpreadsheetApp.getActiveSpreadsheet();
-  Object.keys(TABLES).forEach(name=>{
-    let sh=ss.getSheetByName(name);if(!sh)sh=ss.insertSheet(name);
-    const headers=TABLES[name].concat(name==='_Ops'?[]:name==='Feedback'?[]:SYSTEM);
-    if(sh.getLastRow()===0||sh.getLastColumn()===0){sh.getRange(1,1,1,headers.length).setValues([headers]);}
-    else{const current=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0];if(current.join('\u001f')!==headers.join('\u001f'))throw new Error('Header mismatch in '+name+'; setup stopped to protect existing rows.');}
-    if(name==='_Ops'&&!sh.isSheetHidden())sh.hideSheet();
+function cols_(en) { return T[en][1].split(',').concat(SYS); }
+
+/* ---------- menu & setup ---------- */
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('Shohel App')
+    .addItem('1. Setup (tabs + token)', 'setup')
+    .addItem('2. Generate pairing link', 'pairing')
+    .addItem('3. Rotate token', 'rotateToken').addToUi();
+}
+function setup() {
+  const ss = SpreadsheetApp.getActive(); ss.setSpreadsheetTimeZone('Asia/Dhaka');
+  Object.keys(T).concat(['_Ops']).forEach(function (en) {
+    const name = T[en] ? T[en][0] : '_Ops';
+    const cols = T[en] ? cols_(en) : ['op_id', 'entity', 'entity_id', 'result_json', 'applied_at'];
+    const sh = ss.getSheetByName(name) || ss.insertSheet(name);
+    sh.getRange(1, 1, sh.getMaxRows(), cols.length).setNumberFormat('@'); // plain text: ids, dates, phones
+    cols.forEach(function (c, i) {
+      if (NUMC.indexOf(c) >= 0) sh.getRange(2, i + 1, sh.getMaxRows() - 1, 1).setNumberFormat(c === 'amount' || c === 'total' ? '0.00' : '0');
+    });
+    sh.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold'); sh.setFrozenRows(1);
   });
-  const viewDefs={Balances:['customer_id','customer','total_sales','returns','net_sales','paid','adj_effect','outstanding','orders_count','last_txn_date'],Summary:['label','value']};
-  Object.keys(viewDefs).forEach(name=>{let sh=ss.getSheetByName(name);if(!sh)sh=ss.insertSheet(name);if(sh.getLastRow()===0)sh.getRange(1,1,1,viewDefs[name].length).setValues([viewDefs[name]])});
-  const cats=ss.getSheetByName('ExpenseCategories');
-  if(cats.getLastRow()===1){const rows=CATEGORIES.map((name,i)=>['cat-'+String(i+1).padStart(2,'0'),name,false,true,'active','','',new Date().toISOString(),new Date().toISOString(),1,'setup']);cats.getRange(2,1,rows.length,rows[0].length).setValues(rows)}
-  PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID',ss.getId());
-  if(!PropertiesService.getScriptProperties().getProperty('API_TOKEN'))rotateToken_();
-  if(!PropertiesService.getScriptProperties().getProperty('DATA_VERSION'))PropertiesService.getScriptProperties().setProperty('DATA_VERSION','1');
-  return 'Setup complete: tabs and API token are ready. Reload the spreadsheet to see Shohel App.';
+  ss.getSheetByName('_Ops').hideSheet();
+  const p = PropertiesService.getScriptProperties();
+  if (!p.getProperty('API_TOKEN')) p.setProperty('API_TOKEN', Utilities.getUuid() + Utilities.getUuid());
+  SpreadsheetApp.getUi().alert('Setup done. Next: Deploy > New deployment > Web app (Execute as: Me, Access: Anyone), then menu 2.');
+}
+function pairing() {
+  const ui = SpreadsheetApp.getUi(), r = ui.prompt('GitHub Pages URL (e.g. https://user.github.io/repo/)');
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const url = ScriptApp.getService().getUrl();
+  if (!url) return ui.alert('Deploy as Web app first.');
+  const base = r.getResponseText().trim().replace(/#.*$/, '');
+  ui.alert('Open ONLY on the phone to pair:\n\n' + base + '#/pair?api=' + encodeURIComponent(url) +
+    '&token=' + PropertiesService.getScriptProperties().getProperty('API_TOKEN'));
+}
+function rotateToken() {
+  PropertiesService.getScriptProperties().setProperty('API_TOKEN', Utilities.getUuid() + Utilities.getUuid());
+  SpreadsheetApp.getUi().alert('Token rotated. Old pairings stop working. Generate a new link.');
 }
 
-function colLetter_(n){let s='';while(n){const r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26);}return s;}
+/* ---------- web app ---------- */
+function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+function doGet() { return json_({ ok: true, service: 'shohel-prototype', version: VERSION }); }
+function tokenOk_(t) { // constant-time style compare
+  const s = PropertiesService.getScriptProperties().getProperty('API_TOKEN') || ''; t = String(t || '');
+  let d = s.length ^ t.length;
+  for (let i = 0; i < s.length; i++) d |= s.charCodeAt(i) ^ (t.charCodeAt(i) || 0);
+  return s.length > 0 && d === 0;
+}
+function doPost(e) {
+  try {
+    if (e.postData.contents.length > 200000) return json_({ ok: false, error: 'too_large' });
+    const b = JSON.parse(e.postData.contents);
+    if (!tokenOk_(b.token)) { Utilities.sleep(800); return json_({ ok: false, error: 'unauthorized' }); }
+    if (b.action === 'ping') return json_({ ok: true, server_time: new Date().toISOString(), version: VERSION });
+    if (b.action === 'snapshot') return json_(snapshot_());
+    if (b.action === 'push') return json_(push_(b));
+    return json_({ ok: false, error: 'unknown_action' });
+  } catch (err) {
+    console.error(String(err));
+    return json_({ ok: false, error: 'server_error', message: 'Server error' });
+  }
+}
 
-function installBackupTrigger(){if(!ScriptApp.getProjectTriggers().some(t=>t.getHandlerFunction()==='dailyBackup'))ScriptApp.newTrigger('dailyBackup').timeBased().everyDays(1).atHour(2).create();return 'Daily backup trigger installed.'}
-function rotateToken(){rotateToken_();SpreadsheetApp.getUi().alert('নতুন API token তৈরি হয়েছে। আগের pairing বাতিল হয়েছে। Pairing information খুলুন।');}
-function rotateToken_(){const t=Utilities.getUuid().replace(/-/g,'')+Utilities.getUuid().replace(/-/g,'');PropertiesService.getScriptProperties().setProperty('API_TOKEN',t);return t;}
-function showPairing(){const ui=SpreadsheetApp.getUi(),p=ui.prompt('PWA URL','GitHub Pages URL দিন (উদাহরণ https://user.github.io/repo/)',ui.ButtonSet.OK_CANCEL);if(p.getSelectedButton()!==ui.Button.OK)return;const base=p.getResponseText().trim().replace(/\/$/,'');const api=ScriptApp.getService().getUrl();const token=PropertiesService.getScriptProperties().getProperty('API_TOKEN');if(!api||!token){ui.alert('আগে Apps Script Web App deploy করুন।');return}const link=base+'/#/pair?api='+encodeURIComponent(api)+'&token='+encodeURIComponent(token);const html=HtmlService.createHtmlOutput('<p>এই ব্যক্তিগত pairing link শুধু পরীক্ষকের সঙ্গে নিরাপদে শেয়ার করুন।</p><textarea style="width:100%;height:100px">'+escapeHtml_(link)+'</textarea>');ui.showModalDialog(html,'Pairing link');}
-function doGet(){return json_({ok:true,service:'shohel-prototype',version:VERSION});}
-function doPost(e){try{const raw=e&&e.postData&&e.postData.contents||'';if(raw.length>200000)return json_({ok:false,error:'request_too_large'});const b=JSON.parse(raw);if(!tokenOk_(String(b.token||''))){Utilities.sleep(250);return json_({ok:false,error:'unauthorized',message:'অনুমতি নেই — আবার পেয়ার করুন'})}switch(b.action){case'ping':return json_({ok:true,server_time:new Date().toISOString()});case'snapshot':return json_(snapshot_(b));case'push':return json_(push_(b));default:return json_({ok:false,error:'unknown_action'})}}catch(err){console.error('request failed');return json_({ok:false,error:'server_error',message:'সার্ভারে সমস্যা হয়েছে'})}}
-function json_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON)}
-function tokenOk_(candidate){const expected=PropertiesService.getScriptProperties().getProperty('API_TOKEN')||'';let diff=candidate.length^expected.length,n=Math.max(candidate.length,expected.length);for(let i=0;i<n;i++)diff|=(candidate.charCodeAt(i)||0)^(expected.charCodeAt(i)||0);return !!expected&&diff===0}
-function sheet_(name){const id=PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');return SpreadsheetApp.openById(id).getSheetByName(name)}
-function headers_(sh){return sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0]}
-function rows_(name){const sh=sheet_(name);if(!sh||sh.getLastRow()<2)return[];const h=headers_(sh),vals=sh.getRange(2,1,sh.getLastRow()-1,h.length).getValues();return vals.map(row=>{const o={};h.forEach((k,i)=>o[k]=normal_(row[i]));return o})}
-function normal_(v){if(v instanceof Date)return Utilities.formatDate(v,'UTC',"yyyy-MM-dd'T'HH:mm:ss'Z'");if(typeof v==='string'&&/^'[=+@-]/.test(v))return v.slice(1);return v}
-function snapshot_(b){const version=PropertiesService.getScriptProperties().getProperty('DATA_VERSION')||'1';if(String(b.have||'')===version)return{ok:true,unchanged:true,data_version:version,server_time:new Date().toISOString()};const tables={};Object.keys(TABLES).filter(n=>!['_Ops','Feedback'].includes(n)).forEach(n=>tables[n]=rows_(n).filter(r=>r.status!=='void'));return{ok:true,data_version:version,tables,summary:summary_(tables),server_time:new Date().toISOString()}}
-function summary_(t){const sum=(tab,col)=>((t[tab]||[]).filter(r=>r.status!=='void').reduce((n,r)=>n+(Number(r[col])||0),0));const sales=sum('Orders','total'),returns=sum('Returns','amount_adjustment'),paid=sum('Payments','amount'),expenses=sum('Expenses','amount'),invested=sum('Investments','amount'),assets=sum('Assets','purchase_price'),adj=sum('Adjustments','amount'),recovered=sum('Recoveries','amount');return{total_sales:sales,total_returns:returns,net_sales:sales-returns,total_collected:paid,total_outstanding:sales-returns-paid,total_expenses:expenses,total_invested:invested,total_asset_value:assets,adjustments_total:adj,adjustments_recovered:recovered,adjustments_remaining:adj-recovered}}
-function push_(b){const ops=b.ops||[];if(!Array.isArray(ops)||ops.length>25)return{ok:false,error:'batch_invalid'};const lock=LockService.getScriptLock();if(!lock.tryLock(30000))return{ok:false,error:'busy'};try{const existing=new Map(rows_('_Ops').map(r=>[r.op_id,r]));const results=[];let changed=false;ops.forEach(op=>{if(!op||!op.op_id){results.push({op_id:'',status:'rejected',code:'op_invalid',message:'এন্ট্রি ঠিক নয়'});return}if(existing.has(op.op_id)){let old=existing.get(op.op_id),res={op_id:op.op_id,status:'duplicate'};try{Object.assign(res,JSON.parse(old.result_json||'{}'))}catch(_){}results.push(res);return}try{const result=apply_(op);const stored={op_id:op.op_id,status:'applied',version:result.version||1};append_('_Ops',{op_id:op.op_id,entity:op.entity,entity_id:op.entity_id,result_json:JSON.stringify(stored),applied_at:new Date().toISOString()});existing.set(op.op_id,{result_json:JSON.stringify(stored)});results.push({op_id:op.op_id,status:'applied',version:stored.version});changed=true}catch(err){results.push({op_id:op.op_id,status:'rejected',code:err.code||'invalid',message:err.message||'তথ্য ঠিক নয়'})}});if(changed){PropertiesService.getScriptProperties().setProperty('DATA_VERSION',String(Number(PropertiesService.getScriptProperties().getProperty('DATA_VERSION')||0)+1));refreshViews_()}return{ok:true,results,data_version:PropertiesService.getScriptProperties().getProperty('DATA_VERSION')||'1'}}finally{lock.releaseLock()}}
-function apply_(op){if(op.op!=='create'&&op.op!=='void'&&op.op!=='update')throw codeErr_('operation_invalid','অপারেশন ঠিক নয়');const tab=ENTITY_TAB[op.entity];if(!tab)throw codeErr_('entity_invalid','এন্ট্রি ধরন ঠিক নয়');if(op.op==='void')return void_(op,tab);if(op.op==='update')throw codeErr_('update_not_supported','এই সংস্করণে সম্পাদনা সমর্থিত নয়');const p=op.payload||{},id=String(op.entity_id||p.id||'');if(!id)throw codeErr_('id_invalid','আইডি নেই');const all=rows_(tab);if(all.some(r=>r.id===id))throw codeErr_('id_conflict','এই এন্ট্রি আগেই আছে');const now=new Date().toISOString(),date=String(p.date||p.order_date||p.paid_on||p.expense_date||p.invested_on||p.purchased_on||p.adjusted_on||p.returned_on||p.recovered_on||p.effective_from||now.slice(0,10));if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||date>Utilities.formatDate(new Date(Date.now()+86400000),'Asia/Dhaka','yyyy-MM-dd'))throw codeErr_('date_invalid','তারিখ ঠিক নয়');let row=mapPayload_(op.entity,id,p,date,now,op.op_id);if(['amount','purchase_price','default_rate','quantity','rate','total','line_total','amount_adjustment','quantity_returned'].some(k=>k in row)&&!Number.isFinite(Number(row.amount??row.purchase_price??row.default_rate??row.quantity??row.rate??row.total??row.line_total??row.amount_adjustment??row.quantity_returned)))throw codeErr_('amount_invalid','টাকার অঙ্ক ঠিক নয়');if(['amount','purchase_price','default_rate'].some(k=>k in row)&&Number(row.amount??row.purchase_price??row.default_rate)<0)throw codeErr_('amount_invalid','টাকার অঙ্ক ঠিক নয়');if('amount'in row&&Number(row.amount)<=0)throw codeErr_('amount_invalid','টাকার অঙ্ক ঠিক নয়');if(op.entity==='order'){const cust=rows_('Customers').find(x=>x.id===row.customer_id&&x.status==='active');if(!cust)throw codeErr_('customer_not_found','কাস্টমার পাওয়া যায়নি');const items=Array.isArray(p.items)?p.items:[];if(!items.length||items.length>30)throw codeErr_('items_invalid','অর্ডারের পণ্য ঠিক নয়');row.customer_name=cust.name;row.total=0;items.forEach(it=>{const q=Number(it.quantity),rate=Number(it.rate);if(!Number.isInteger(q)||q<1||rate<0)throw codeErr_('amount_invalid','পরিমাণ বা দর ঠিক নয়');row.total+=q*rate});append_('Orders',row);items.forEach((it,i)=>append_('OrderItems',{id:String(it.id||id+'-'+i),order_id:id,customer_id:row.customer_id,memo_no:row.memo_no,product:safeText_(it.product,120),quantity:Number(it.quantity),rate:Number(it.rate),line_total:Number(it.quantity)*Number(it.rate),status:'active',void_reason:'',voided_at:'',created_at:now,updated_at:now,version:1,op_id:op.op_id}));return{version:1}}append_(tab,row);return{version:1}}
-function mapPayload_(e,id,p,d,now,opid){const common={id,status:'active',void_reason:'',voided_at:'',created_at:now,updated_at:now,version:1,op_id:opid};const cust=()=>{const c=rows_('Customers').find(x=>x.id===p.customerId||x.id===p.customer_id);if(!c)throw codeErr_('customer_not_found','কাস্টমার পাওয়া যায়নি');return c};switch(e){case'customer':return Object.assign(common,{name:safeText_(p.name,120),phone:safeText_(p.phone,30),address:safeText_(p.address,300),notes:safeText_(p.notes,1000)});case'order':return Object.assign(common,{customer_id:String(p.customerId||p.customer_id||''),customer_name:'',memo_no:safeText_(p.memo||p.memo_no,40),order_date:d,notes:safeText_(p.notes,1000),total:0,replaces_order_id:''});case'payment':{const c=cust();return Object.assign(common,{customer_id:c.id,customer_name:c.name,order_id:'',memo_no:'',amount:Number(p.amount),method:safeText_(p.method||'other',30),paid_on:d,notes:safeText_(p.notes,1000)})}case'expense':return Object.assign(common,{expense_date:d,category:safeText_(p.category,120),amount:Number(p.amount),method:safeText_(p.method||'cash',30),description:safeText_(p.description,300),notes:safeText_(p.notes,1000)});case'investment':return Object.assign(common,{invested_on:d,amount:Number(p.amount),type:safeText_(p.type||'other',80),method:safeText_(p.method||'cash',30),purpose:safeText_(p.purpose,300),notes:safeText_(p.notes,1000)});case'asset':return Object.assign(common,{name:safeText_(p.name,120),quantity:Number(p.quantity||1),purchase_price:Number(p.price||p.purchase_price),purchased_on:d,method:safeText_(p.method||'cash',30),asset_status:safeText_(p.status||'ব্যবহারে',30),remarks:safeText_(p.remarks,1000)});case'adjustment':{const c=p.customerId?cust():null;return Object.assign(common,{customer_id:c?c.id:'',customer_name:c?c.name:'',person:safeText_(p.person,120),kind:safeText_(p.kind,60),direction:safeText_(p.direction||'owed_to_business',40),amount:Number(p.amount),adjusted_on:d,affects_customer_outstanding:!!p.affects,reason:safeText_(p.reason,500),notes:safeText_(p.notes,1000)})}case'rate':return Object.assign(common,{product:safeText_(p.product,120),material:safeText_(p.material,120),gsm_spec:safeText_(p.spec,100),default_rate:Number(p.rate),effective_from:d});case'return':{const c=cust(),order=rows_('Orders').find(x=>x.id===p.orderId&&x.status==='active'),item=rows_('OrderItems').find(x=>x.id===p.orderItemId&&x.status==='active');if(!order)throw codeErr_('order_not_found','অর্ডার পাওয়া যায়নি');if(!item||item.order_id!==order.id)throw codeErr_('order_item_not_found','অর্ডারের পণ্য পাওয়া যায়নি');const already=rows_('Returns').filter(x=>x.order_item_id===item.id&&x.status==='active').reduce((n,x)=>n+Number(x.quantity_returned||0),0),qty=Number(p.quantity);if(!Number.isInteger(qty)||qty<1||qty>Number(item.quantity)-already)throw codeErr_('return_exceeds_ordered','অর্ডারের চেয়ে বেশি ফেরত দেওয়া যাবে না');return Object.assign(common,{customer_id:c.id,customer_name:c.name,order_id:order.id,memo_no:order.memo_no,order_item_id:item.id,product:item.product,quantity_returned:qty,amount_adjustment:Number(p.amount),returned_on:d,reason:safeText_(p.reason,300)})}case'recovery':{const a=rows_('Adjustments').find(x=>x.id===p.adjustmentId&&x.status==='active');if(!a)throw codeErr_('adjustment_not_found','সমন্বয় পাওয়া যায়নি');const paid=rows_('Recoveries').filter(x=>x.adjustment_id===a.id&&x.status==='active').reduce((n,x)=>n+Number(x.amount||0),0);if(Number(p.amount)<=0||Number(p.amount)>Number(a.amount)-paid)throw codeErr_('recovery_exceeds_remaining','বাকি অঙ্কের চেয়ে বেশি আদায় লেখা যাবে না');return Object.assign(common,{adjustment_id:a.id,amount:Number(p.amount),recovered_on:d,note:safeText_(p.note,300)})}case'feedback':return{id,created_at:now,kind:safeText_(p.kind,30),rating:Number(p.rating)||'',screen:safeText_(p.screen,80),message:safeText_(p.message,1000),app_version:VERSION,device_id:safeText_(p.device_id,80)};default:throw codeErr_('entity_invalid','এন্ট্রি ধরন ঠিক নয়')}}
-function void_(op,tab){const sh=sheet_(tab),data=rows_(tab),idx=data.findIndex(r=>r.id===op.entity_id);if(idx<0)throw codeErr_('record_not_found','এন্ট্রি পাওয়া যায়নি');const reason=safeText_(op.payload&&op.payload.reason,500);if(!reason)throw codeErr_('void_reason_required','কারণ লিখুন');const h=headers_(sh),rowNo=idx+2;['status','void_reason','voided_at','updated_at'].forEach((k)=>{const col=h.indexOf(k);if(col>=0)sh.getRange(rowNo,col+1).setValue(k==='status'?'void':k==='void_reason'?reason:new Date().toISOString())});if(op.entity==='order'){voidRelated_('OrderItems','order_id',op.entity_id,reason);voidRelated_('Returns','order_id',op.entity_id,reason)}if(op.entity==='adjustment')voidRelated_('Recoveries','adjustment_id',op.entity_id,reason);return{version:Number(data[idx].version)||1}}
-function voidRelated_(tab,key,id,reason){const sh=sheet_(tab),h=headers_(sh),rows=rows_(tab);rows.forEach((r,i)=>{if(r[key]===id&&r.status==='active'){[['status','void'],['void_reason',reason],['voided_at',new Date().toISOString()]].forEach(([k,v])=>{const c=h.indexOf(k);if(c>=0)sh.getRange(i+2,c+1).setValue(v)})}})}
-function append_(tab,obj){const sh=sheet_(tab),h=headers_(sh);sh.appendRow(h.map(k=>obj[k]===undefined?'':obj[k]))}
-function safeText_(v,max){let s=String(v||'').slice(0,max);if(/^\s*[=+@-]/.test(s))s="'"+s;return s}
-function escapeHtml_(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function codeErr_(code,message){const e=new Error(message);e.code=code;return e}
-function refreshViews_(){const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID'));const customers=rows_('Customers').filter(x=>x.status==='active'),orders=rows_('Orders').filter(x=>x.status==='active'),items=rows_('OrderItems').filter(x=>x.status==='active'),payments=rows_('Payments').filter(x=>x.status==='active'),returns=rows_('Returns').filter(x=>x.status==='active'),adjustments=rows_('Adjustments').filter(x=>x.status==='active'),recoveries=rows_('Recoveries').filter(x=>x.status==='active');const table=ss.getSheetByName('Balances')||ss.insertSheet('Balances'),head=['customer_id','customer','total_sales','returns','net_sales','paid','adj_effect','outstanding','orders_count','last_txn_date'];table.clearContents();table.getRange(1,1,1,head.length).setValues([head]).setFontWeight('bold');const out=customers.map(c=>{const os=orders.filter(o=>o.customer_id===c.id),orderIds=new Set(os.map(o=>o.id)),sales=items.filter(i=>orderIds.has(i.order_id)).reduce((n,i)=>n+Number(i.line_total||0),0),ret=returns.filter(r=>r.customer_id===c.id).reduce((n,r)=>n+Number(r.amount_adjustment||0),0),paid=payments.filter(p=>p.customer_id===c.id).reduce((n,p)=>n+Number(p.amount||0),0);let adj=0;adjustments.filter(a=>a.customer_id===c.id&&a.affects_customer_outstanding===true).forEach(a=>{const rec=recoveries.filter(r=>r.adjustment_id===a.id).reduce((n,r)=>n+Number(r.amount||0),0),remain=Number(a.amount||0)-rec;adj+=a.direction==='owed_by_business'?-remain:remain});return[c.id,c.name,sales,ret,sales-ret,paid,adj,sales-ret-paid+adj,os.length,'']});if(out.length)table.getRange(2,1,out.length,head.length).setValues(out);table.setFrozenRows(1);const summary=ss.getSheetByName('Summary')||ss.insertSheet('Summary'),t={Orders:orders,Returns:returns,Payments:payments,Expenses:rows_('Expenses').filter(x=>x.status==='active'),Investments:rows_('Investments').filter(x=>x.status==='active'),Assets:rows_('Assets').filter(x=>x.status==='active'),Adjustments:adjustments,Recoveries:recoveries};const sums=summary_(t);summary.clearContents();summary.getRange(1,1,1,2).setValues([['label','value']]).setFontWeight('bold');summary.getRange(2,1,Object.keys(sums).length,2).setValues(Object.entries(sums));summary.setFrozenRows(1)}
-function dailyBackup(){const id=PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');if(!id)return;const f=DriveApp.getFileById(id),folderIt=DriveApp.getFoldersByName('Shohel Prototype Backups'),folder=folderIt.hasNext()?folderIt.next():DriveApp.createFolder('Shohel Prototype Backups');f.makeCopy('Shohel backup '+Utilities.formatDate(new Date(),'Asia/Dhaka','yyyy-MM-dd HH:mm'),folder);const files=folder.getFiles();const list=[];while(files.hasNext())list.push(files.next());list.sort((a,b)=>b.getDateCreated()-a.getDateCreated()).slice(14).forEach(x=>x.setTrashed(true));}
-function seedDemo(){SpreadsheetApp.getUi().alert('ফোন pair করার পর খালি Sheet-এ প্রথম sync চললে ফোনের demo data এখানে আসবে। এই Sheet-এ আগে থেকে data থাকলে demo seed হবে না।');}
+/* ---------- text safety (formula injection) ---------- */
+function clean_(v, max) {
+  const s = String(v == null ? '' : v).replace(/[\u0000-\u0008\u000B-\u001F]/g, '').trim().slice(0, max || 200);
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
+}
+function unclean_(s) { return /^'[=+\-@]/.test(s) ? s.slice(1) : s; }
+
+/* ---------- reads ---------- */
+function rows_(en) {
+  const sh = SpreadsheetApp.getActive().getSheetByName(T[en][0]), n = sh.getLastRow(), cols = cols_(en);
+  if (n < 2) return [];
+  return sh.getRange(2, 1, n - 1, cols.length).getValues().map(function (r) {
+    const o = {}; cols.forEach(function (c, i) { o[c] = typeof r[i] === 'string' ? unclean_(r[i]) : r[i]; }); return o;
+  });
+}
+function snapshot_() {
+  const tables = {};
+  Object.keys(T).forEach(function (en) { if (en !== 'feedback') tables[en + 's'] = rows_(en); });
+  return { ok: true, tables: tables, data_version: Number(PropertiesService.getScriptProperties().getProperty('DV') || 0), server_time: new Date().toISOString() };
+}
+
+/* ---------- writes ---------- */
+function tomorrow_() { return Utilities.formatDate(new Date(Date.now() + 864e5), 'Asia/Dhaka', 'yyyy-MM-dd'); }
+function check_(en, p, cust) {
+  const num = function (x) { return typeof x === 'number' && isFinite(x); };
+  if ((en === 'payment' || en === 'expense') && !(num(p.amount) && p.amount > 0 && p.amount < 1e10)) return 'amount_invalid';
+  const dk = { order: 'order_date', payment: 'paid_on', expense: 'expense_date' }[en];
+  if (dk && (!DATE_RE.test(p[dk] || '') || p[dk] > tomorrow_())) return 'date_invalid';
+  if ((en === 'payment' || en === 'expense') && METHODS.indexOf(p.method) < 0) return 'method_invalid';
+  if ((en === 'payment' || en === 'order') && !cust[p.customer_id]) return 'customer_not_found';
+  if (en === 'customer' && !clean_(p.name)) return 'name_required';
+  if (en === 'expense' && !clean_(p.category)) return 'category_required';
+  if (en === 'feedback' && (KINDS.indexOf(p.kind) < 0 || !clean_(p.message, 1000))) return 'feedback_invalid';
+  if (en === 'order') {
+    if (!Array.isArray(p.items) || !p.items.length || p.items.length > 50) return 'items_invalid';
+    for (let i = 0; i < p.items.length; i++) {
+      const x = p.items[i];
+      if (!clean_(x.product) || !Number.isInteger(x.quantity) || x.quantity < 1 || !num(x.rate) || x.rate < 0) return 'items_invalid';
+    }
+  }
+  return null;
+}
+function build_(en, p, cust) {
+  const o = {};
+  T[en][1].split(',').forEach(function (c) {
+    if (c === 'id' || c === 'items' || c === 'total') return;
+    o[c] = NUMC.indexOf(c) >= 0 ? Number(p[c] || 0) : clean_(p[c], MAXLEN[c]);
+  });
+  if (p.customer_id) o.customer_name = cust[p.customer_id];
+  if (en === 'order') {
+    const it = p.items.map(function (i) { return { product: clean_(i.product, 120), quantity: i.quantity, rate: i.rate }; });
+    o.items = JSON.stringify(it);
+    o.total = it.reduce(function (s, i) { return s + i.quantity * Math.round(i.rate * 100); }, 0) / 100;
+  }
+  return o;
+}
+function idRows_(sh, cache) {
+  const k = sh.getName(); if (cache[k]) return cache[k];
+  const n = sh.getLastRow(), m = {};
+  if (n > 1) sh.getRange(2, 1, n - 1, 1).getValues().forEach(function (r, i) { m[r[0]] = i + 2; });
+  return (cache[k] = m);
+}
+function apply_(ss, op, seen, cust, cache) {
+  const id = op && op.op_id, en = op && op.entity, rej = function (c) { return { op_id: id, status: 'rejected', code: c }; };
+  if (!id || typeof id !== 'string' || id.length > 64 || !T[en] || ['create', 'void'].indexOf(op.op) < 0 ||
+      !op.entity_id || String(op.entity_id).length > 64) return rej('op_invalid');
+  if (seen[id]) return { op_id: id, status: 'duplicate' };
+  const sh = ss.getSheetByName(T[en][0]), cols = cols_(en), now = new Date().toISOString(), idx = idRows_(sh, cache);
+  if (op.op === 'void') { // soft delete only; never removes rows
+    const row = idx[op.entity_id];
+    if (!row || en === 'feedback') return rej('not_found');
+    const reason = clean_(op.payload && op.payload.reason, 300);
+    if (!reason) return rej('reason_required');
+    const ver = cols.indexOf('version');
+    const cur = sh.getRange(row, 1, 1, cols.length).getValues()[0];
+    if (cur[cols.indexOf('status')] !== 'void') {
+      sh.getRange(row, cols.indexOf('status') + 1, 1, 3).setValues([['void', reason, now]]);
+      sh.getRange(row, cols.indexOf('updated_at') + 1, 1, 2).setValues([[now, Number(cur[ver]) + 1]]);
+    }
+    if (en === 'customer') delete cust[op.entity_id];
+  } else {
+    if (idx[op.entity_id]) return rej('id_conflict');
+    const p = op.payload || {}, code = check_(en, p, cust);
+    if (code) return rej(code);
+    const rec = build_(en, p, cust); rec.id = op.entity_id;
+    sh.appendRow(cols.map(function (c) {
+      if (c === 'status') return 'active';
+      if (c === 'created_at' || c === 'updated_at') return now;
+      if (c === 'version') return 1;
+      if (c === 'op_id') return id;
+      return rec[c] === undefined ? '' : rec[c];
+    }));
+    idx[op.entity_id] = sh.getLastRow();
+    if (en === 'customer') cust[rec.id] = rec.name;
+  }
+  ss.getSheetByName('_Ops').appendRow([id, en, op.entity_id, '{}', now]); seen[id] = 1;
+  return { op_id: id, status: 'applied' };
+}
+function push_(b) {
+  if (!Array.isArray(b.ops) || b.ops.length > 25) return { ok: false, error: 'batch_invalid', message: 'Batch invalid' };
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return { ok: false, error: 'busy', message: 'Server busy' };
+  try {
+    const ss = SpreadsheetApp.getActive(), ops = ss.getSheetByName('_Ops'), seen = {}, cache = {}, cust = {};
+    const n = ops.getLastRow(); if (n > 1) ops.getRange(2, 1, n - 1, 1).getValues().forEach(function (r) { seen[r[0]] = 1; });
+    rows_('customer').forEach(function (c) { if (c.status !== 'void') cust[c.id] = c.name; });
+    const results = b.ops.map(function (op) {
+      try { return apply_(ss, op, seen, cust, cache); }
+      catch (e) { console.error(String(e)); return { op_id: op && op.op_id, status: 'rejected', code: 'server_error' }; }
+    });
+    const p = PropertiesService.getScriptProperties();
+    p.setProperty('DV', String(Number(p.getProperty('DV') || 0) + 1));
+    console.log('push n=' + results.length + ' applied=' + results.filter(function (r) { return r.status === 'applied'; }).length);
+    return { ok: true, results: results, data_version: Number(p.getProperty('DV')) };
+  } finally { lock.releaseLock(); }
+}
