@@ -1,9 +1,8 @@
 # Assumptions
 
-- The repository started with specification documents only; the UI is a self-contained static PWA prototype in `web/`.
-- Until an Apps Script URL and token are provided, data remains local to this browser. The status strip is illustrative; live cloud sync is not implemented yet.
-- Demo data is synthetic. Amounts are displayed in taka; this UI prototype currently uses integer taka values for its seeded and entered values.
-- Asset purchase price means the total paid for the asset row, not a per-unit price.
-- The week begins Saturday. Profit/loss is explicitly provisional as requested.
-- The PIN setup hashes a PIN with PBKDF2 and stores the resulting hash in browser storage; an automatic lock screen and retry lockout still need to be added before real use.
-- The app uses a lightweight static JavaScript shell instead of the requested Preact/TypeScript toolchain because no source code or package setup was present. This is a prototype implementation choice and should be revisited before production.
+- The UI is a self-contained static JavaScript PWA in `web/`; it does not use a bundler or framework.
+- Until a Google Apps Script URL and token are paired, entries stay in browser local storage. The app can still be used locally and syncs queued changes when a backend is configured and online.
+- Amounts are entered in taka and calculated as integer paisa in the browser. The Sheet stores amounts in taka.
+- Customer balances are computed from active orders and payments. Expenses do not change customer balances.
+- Voiding is a soft delete with a required reason; the original row remains in the Sheet.
+- The PWA is a prototype. It has no PIN screen lock, encryption, or cross-device conflict resolution.

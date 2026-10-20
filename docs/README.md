@@ -1,37 +1,36 @@
 # Shohel Business prototype
 
-## What is ready
+This repository contains a Bangla-first static PWA in `web/` and an optional Google Sheets backend in `apps-script/add.gs`.
 
-This is a static Bangla PWA in `web/` with local persistence, demo data, customer/order/payment/expense flows, the additional prototype screens, feedback, reports, a PIN screen lock, and an Apps Script endpoint in `apps-script/add.gs`. First pairing to an empty sheet uploads the phone's demo records. Later updates push in small idempotent batches and refresh from the sheet. Do not use real business records in this prototype: local storage is not encrypted and the prototype still needs a real-phone acceptance pass.
+## What works in this version
 
-## 1. Create the Sheet backend
+- Add and search customers; record orders, payments, and expenses.
+- View customer balances and recent activity.
+- Void orders, payments, and expenses with a reason.
+- Keep entries on the current browser while offline and sync them to a paired Sheet when online.
+- Send feedback; it is queued with the other entries until sync succeeds.
 
-1. Create a new, private Google spreadsheet for the prototype.
-2. Open **Extensions → Apps Script**. Paste `apps-script/add.gs` into the editor (a file named `add.gs` is fine).
-3. In Apps Script **Project Settings**, enable **Show `appsscript.json` manifest file**. Replace its contents with `apps-script/appsscript.json` and save.
-4. From the editor, select `setup` and click **Run**. Review the requested Google permissions. Setup creates/checks the tabs and saves the API token in Script Properties. It is intentionally lightweight and avoids formatting every sheet during setup. It is safe to rerun if tabs were partially created. After setup, reload the spreadsheet; use **Shohel App → ৬. Install daily backup** separately if you want the daily Drive backup trigger. The token is not printed in logs.
-5. Choose **Deploy → New deployment → Web app**. Set **Execute as: Me** and **Who has access: Anyone**, then deploy and authorize. Keep the Sheet itself private. Copy the `/exec` URL for the pairing step.
-6. If you edit the script later, use **Deploy → Manage deployments → Edit → New version → Deploy**. The `/exec` URL stays the same. To invalidate existing pairing links, use the Sheet menu **Shohel App → ৪. Rotate token**.
+The app starts empty. Add a customer first. There is no demo-data seed, PIN lock, report module, JSON export, or cloud backup setup in this version. Browser storage is not encrypted, so use sample information only. A real-phone acceptance pass is still needed.
 
-The initial Google authorization may show an unverified-app screen. Confirm that this is your own script, then use **Advanced → Go to [project name]** to continue. Never approve a script you did not create or inspect.
+## Create and connect the Sheet
 
-## 2. Publish on GitHub Pages
+1. Create a private Google spreadsheet for this prototype.
+2. Open **Extensions → Apps Script** and paste `apps-script/add.gs` into a script file.
+3. In Apps Script project settings, enable the `appsscript.json` manifest and replace it with `apps-script/appsscript.json`.
+4. Run `setup` in the Apps Script editor and approve the permissions. It creates the required tabs and API token.
+5. Choose **Deploy → New deployment → Web app**. Set **Execute as: Me** and **Who has access: Anyone**, then deploy. Keep the spreadsheet private and copy the deployed `/exec` URL.
+6. In the spreadsheet, reload it and open **Shohel App → 2. Generate pairing link**. Enter the published app's HTTPS URL. Open the generated link on the phone; the app saves the pairing details and removes them from the address bar.
 
-1. Create a GitHub repository and push this project to its `main` branch. Do not add an Apps Script token, pairing link, or `.clasp` credentials to GitHub. `.gitignore` excludes common local credential files.
-2. In the repository, open **Settings → Pages** and select **GitHub Actions** as the build/deployment source.
-3. The included `.github/workflows/pages.yml` publishes the contents of `web/`. Wait for the workflow to complete. The URL is usually `https://<github-user>.github.io/<repository>/`.
-4. Check that the page opens over HTTPS. GitHub Actions needs no API-token secret: the token stays in Apps Script Script Properties and is transferred only inside the one-time pairing URL fragment.
+Apps Script may show an unverified-app screen during your first authorization. Continue only after confirming that this is the script you created and inspected. After script changes, deploy a new version from **Deploy → Manage deployments → Edit**. Use **Shohel App → 3. Rotate token** to invalidate old pairings.
 
-## 3. Pair the Android phone
+## Publish with GitHub Pages
 
-1. In the Sheet, choose **Shohel App → ৩. Pairing information** and enter the exact GitHub Pages URL, including the repository path and trailing slash if shown.
-2. Send the resulting private link to the tester through a one-to-one channel. The token is inside the URL fragment; the app saves it and removes the fragment from the address bar. Delete the pairing message after pairing, and rotate the token at the end of the trial.
-3. Open the pairing link in current Android Chrome. Set the PIN from **আরও → সেটিংস → PIN লক → সেট করুন**. The app performs the first sync; with an empty Sheet, the demo data on this phone is uploaded.
-4. In Chrome, open **⋮ → Install app** (or **Add to Home screen**) and confirm. Launch **শোহেল** from the home screen. Turn on Airplane mode to check offline entry, then reopen the app online and tap **এখনই সিঙ্ক**.
+1. Push this repository to a GitHub repository's `main` branch. Never commit a pairing link, API token, or clasp credential.
+2. In repository **Settings → Pages**, choose **GitHub Actions** as the source.
+3. The included `.github/workflows/pages.yml` publishes `web/`. After it finishes, open the HTTPS Pages URL and pair the phone using the steps above.
 
-## Important behavior
+## Use the app
 
-- The app uses browser local storage for its prototype cache. It is not encrypted. A JSON export intentionally omits the pairing token.
-- A first sync to a truly empty Sheet uploads the demo data from the phone. If the Sheet already has customers, the app treats it as authoritative and does not seed the demo records.
-- The Apps Script API supports snapshots, idempotent creates, and void operations. Some advanced production behaviors (all edit/version conflict paths, rich return/recovery audit screens, large-dataset optimization, formal self-tests and full phone QA) still need further review. Check `LIMITATIONS.md`.
-- `add.gs` is a paste-in backend. The script does not include a real-data seed/import tool for the Sheet.
+Add a customer, then use the home screen shortcuts to record an order, payment, or expense. The customer screen shows sales, collected payments, balance, and history. The status strip shows whether data is waiting to sync. If offline, entries stay on that browser and sync when it is online again. Keep the app open and tap **এখনই সিঙ্ক** to request a sync.
+
+The app stores its cache and pairing token in browser local storage. Clearing site data removes local entries and pairing details. Do not enter confidential or real customer information in this prototype.

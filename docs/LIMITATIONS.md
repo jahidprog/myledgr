@@ -1,9 +1,9 @@
 # Prototype limitations
 
-- The Apps Script endpoint and browser sync client are implemented, but the owner still needs to create the Sheet, paste and authorize the script, deploy the web app, publish the PWA, and pair the phone. These steps have not been performed in the user’s Google or GitHub accounts.
-- Browser-local data is not encrypted and can be lost if site data is cleared. Do not enter sensitive business data.
-- Cloud sync requires the app to be open. There is no background sync, no automatic retry timer, and no cross-device conflict resolution UI yet.
-- PIN setup stores a PBKDF2 hash and the app locks on reopen or after two minutes in the background. Five-try escalating retry lockout is not implemented.
-- Some screens and reports are first-pass forms. Editing/version conflicts, a user-facing void-with-reason flow, full report filters, category management, and broad validation still need completion. Server-side return limits and recovery limits are enforced.
-- The static service worker caches the app shell only; it does not cache API responses.
-- No real-phone installability, accessibility, low-end Android, iPhone, or offline acceptance pass has been run. No automated or Apps Script self-test suite is included yet.
+- The Sheet, Apps Script deployment, GitHub Pages site, and phone pairing still need to be set up in the owner's accounts.
+- Browser local storage is not encrypted and can be lost when site data is cleared. Use sample information only.
+- Sync runs while the app is open, retries periodically, and can queue writes offline. It does not provide background sync or cross-device conflict resolution.
+- This build includes customer, order, payment, expense, feedback, settings, and sync flows. It does not include PIN lock, reports, returns, investments, assets, adjustments, rate chart, import/export, or a JSON backup screen.
+- The Apps Script endpoint supports snapshots, idempotent creates, and void operations. It has no edit/version-conflict workflow or richer rejected-entry recovery screen.
+- The service worker caches the app shell, not API responses.
+- Real-phone installability, accessibility, low-end Android, iPhone, and offline acceptance have not been checked. No automated or Apps Script self-test suite is included.
