@@ -17,11 +17,11 @@ The app starts empty. Add a customer first. There is no demo-data seed, PIN lock
 1. Create a private Google spreadsheet for this prototype.
 2. Open **Extensions → Apps Script** and paste `apps-script/add.gs` into a script file.
 3. In Apps Script project settings, enable the `appsscript.json` manifest and replace it with `apps-script/appsscript.json`.
-4. Run `setup` in the Apps Script editor and approve the permissions. It creates the required tabs and API token.
+4. Run `setup` in the Apps Script editor and approve the permissions. It creates/checks the required tabs, saves the spreadsheet ID, and creates the API token.
 5. Choose **Deploy → New deployment → Web app**. Set **Execute as: Me** and **Who has access: Anyone**, then deploy. Keep the spreadsheet private and copy the deployed `/exec` URL.
 6. In the spreadsheet, reload it and open **Shohel App → 2. Generate pairing link**. Enter the published app's HTTPS URL. Open the generated link on the phone; the app saves the pairing details and removes them from the address bar.
 
-Apps Script may show an unverified-app screen during your first authorization. Continue only after confirming that this is the script you created and inspected. After script changes, deploy a new version from **Deploy → Manage deployments → Edit**. Use **Shohel App → 3. Rotate token** to invalidate old pairings.
+Apps Script may show an unverified-app screen during your first authorization. Continue only after confirming that this is the script you created and inspected. When updating the script source, save it, run `setup` again from the bound spreadsheet, then deploy a new version from **Deploy → Manage deployments → Edit**. Setup keeps existing rows and token. Use **Shohel App → 3. Rotate token** to invalidate old pairings.
 
 ## Publish with GitHub Pages
 

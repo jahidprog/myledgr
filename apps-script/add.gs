@@ -23,7 +23,10 @@ function onOpen() {
     .addItem('3. Rotate token', 'rotateToken').addToUi();
 }
 function setup() {
-  const ss = SpreadsheetApp.getActive(); ss.setSpreadsheetTimeZone('Asia/Dhaka');
+  const ss = SpreadsheetApp.getActive();
+  if (!ss) throw new Error('Open this script from its bound spreadsheet and run setup again.');
+  PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', ss.getId());
+  ss.setSpreadsheetTimeZone('Asia/Dhaka');
   Object.keys(T).concat(['_Ops']).forEach(function (en) {
     const name = T[en] ? T[en][0] : '_Ops';
     const cols = T[en] ? cols_(en) : ['op_id', 'entity', 'entity_id', 'result_json', 'applied_at'];
@@ -56,6 +59,11 @@ function rotateToken() {
 /* ---------- web app ---------- */
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function doGet() { return json_({ ok: true, service: 'shohel-prototype', version: VERSION }); }
+function spreadsheet_() {
+  const id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (!id) throw new Error('Spreadsheet is not configured. Run setup from the bound spreadsheet.');
+  return SpreadsheetApp.openById(id);
+}
 function tokenOk_(t) { // constant-time style compare
   const s = PropertiesService.getScriptProperties().getProperty('API_TOKEN') || ''; t = String(t || '');
   let d = s.length ^ t.length;
@@ -85,16 +93,16 @@ function clean_(v, max) {
 function unclean_(s) { return /^'[=+\-@]/.test(s) ? s.slice(1) : s; }
 
 /* ---------- reads ---------- */
-function rows_(en) {
-  const sh = SpreadsheetApp.getActive().getSheetByName(T[en][0]), n = sh.getLastRow(), cols = cols_(en);
+function rows_(en, ss) {
+  const sh = (ss || spreadsheet_()).getSheetByName(T[en][0]), n = sh.getLastRow(), cols = cols_(en);
   if (n < 2) return [];
   return sh.getRange(2, 1, n - 1, cols.length).getValues().map(function (r) {
     const o = {}; cols.forEach(function (c, i) { o[c] = typeof r[i] === 'string' ? unclean_(r[i]) : r[i]; }); return o;
   });
 }
 function snapshot_() {
-  const tables = {};
-  Object.keys(T).forEach(function (en) { if (en !== 'feedback') tables[en + 's'] = rows_(en); });
+  const tables = {}, ss = spreadsheet_();
+  Object.keys(T).forEach(function (en) { if (en !== 'feedback') tables[en + 's'] = rows_(en, ss); });
   return { ok: true, tables: tables, data_version: Number(PropertiesService.getScriptProperties().getProperty('DV') || 0), server_time: new Date().toISOString() };
 }
 
@@ -180,9 +188,9 @@ function push_(b) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return { ok: false, error: 'busy', message: 'Server busy' };
   try {
-    const ss = SpreadsheetApp.getActive(), ops = ss.getSheetByName('_Ops'), seen = {}, cache = {}, cust = {};
+    const ss = spreadsheet_(), ops = ss.getSheetByName('_Ops'), seen = {}, cache = {}, cust = {};
     const n = ops.getLastRow(); if (n > 1) ops.getRange(2, 1, n - 1, 1).getValues().forEach(function (r) { seen[r[0]] = 1; });
-    rows_('customer').forEach(function (c) { if (c.status !== 'void') cust[c.id] = c.name; });
+    rows_('customer', ss).forEach(function (c) { if (c.status !== 'void') cust[c.id] = c.name; });
     const results = b.ops.map(function (op) {
       try { return apply_(ss, op, seen, cust, cache); }
       catch (e) { console.error(String(e)); return { op_id: op && op.op_id, status: 'rejected', code: 'server_error' }; }
